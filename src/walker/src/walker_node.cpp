@@ -3,12 +3,12 @@
 WalkerNode::WalkerNode() 
     : Node("walker_node"),                // Initialize the ROS2 node
       rotate_clockwise_(true),            // Start with clockwise rotation
-      linear_velocity_(0.2),              // Default forward speed
-      angular_velocity_(0.5),             // Default rotation speed
+      linear_velocity_(0.15),              // Default forward speed
+      angular_velocity_(0.3),             // Default rotation speed
       min_distance_(0.5),                 // Default minimum distance
       warning_distance_(1.0),             // Default warning distance
-      critical_distance_(0.5),            // Default critical distance
-      emergency_distance_(0.3),           // Default emergency distance
+      critical_distance_(0.7),            // Default critical distance
+      emergency_distance_(0.5),           // Default emergency distance
       current_linear_vel_(0.2)            // Start at full speed
 {
     // Initialize ROS2 communications
