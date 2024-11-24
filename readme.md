@@ -22,11 +22,10 @@ sudo apt update
 sudo apt install ros-humble-turtlebot3*
 
 # Create workspace
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/src
+mkdir -p ~/ros2_ws
+cd ~/ros2_ws
 
 # Clone the repository
-git clone https://github.com/yourusername/walker.git
 
 # Install dependencies
 cd ~/ros2_ws
@@ -34,7 +33,7 @@ rosdep update
 rosdep install --from-paths src -y -i
 
 # Build the package
-colcon build --packages-select walker
+colcon build
 
 # Source the workspace
 source install/setup.bash

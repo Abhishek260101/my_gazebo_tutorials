@@ -33,7 +33,9 @@ class WalkerNode : public rclcpp::Node {
         const rclcpp::NodeOptions& options,
         double linear_vel = 0.2,
         double angular_vel = 0.5,
-        double min_dist = 0.5
+        double warn_distance = 1.0,    // New: Warning threshold
+        double crit_distance = 0.5,    // New: Critical threshold
+        double emerg_distance = 0.3    // New: Emergency threshold
     );
     
     /**
@@ -75,6 +77,11 @@ class WalkerNode : public rclcpp::Node {
      */
     void laser_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
 
+    double get_warning_distance() const { return warning_distance_; }
+    double get_critical_distance() const { return critical_distance_; }
+    double get_emergency_distance() const { return emergency_distance_; }
+    double get_current_linear_vel() const { return current_linear_vel_; }
+
     // Methods for testing purposes
     /**
      * @brief Gets the last published velocity command
@@ -109,6 +116,10 @@ class WalkerNode : public rclcpp::Node {
     
     // Testing support
     geometry_msgs::msg::Twist last_cmd_;  ///< Stores last velocity command
+    double warning_distance_;   // Distance to start slowing down
+    double critical_distance_;  // Distance to stop and rotate
+    double emergency_distance_; // Distance for emergency stop
+    double current_linear_vel_; // Current linear velocity
 };
 
 #endif  // WALKER_NODE_HPP_
