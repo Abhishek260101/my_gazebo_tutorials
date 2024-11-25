@@ -2,10 +2,14 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>walker</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="avhad.abhishek005@gmail.com">abhishek</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>
+    A ROS2 package implementing a Roomba-like walker algorithm using the State pattern.
+    The robot moves forward until detecting obstacles, then rotates to find a clear path.
+  </description>
+  <maintainer email="avhad.abhishek005@gmail.com">Abhishek Avhad</maintainer>
+  <license>Apache License 2.0</license>
+  <author email="avhad.abhishek005@gmail.com">Abhishek Avhad</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

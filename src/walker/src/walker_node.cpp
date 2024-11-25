@@ -1,72 +1,99 @@
+/**
+ * @file walker_node.cpp
+ * @author Abhishek Avhad
+ * @brief Implementation of the WalkerNode class
+ * @version 1.0
+ * @date 2024-11-24
+ *
+ * @copyright Copyright (c) 2024
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include "walker/walker_node.hpp"
 
-WalkerNode::WalkerNode() 
-    : Node("walker_node"),                // Initialize the ROS2 node
-      rotate_clockwise_(true),            // Start with clockwise rotation
-      linear_velocity_(0.2),              // Default forward speed
-      angular_velocity_(0.5),             // Default rotation speed
-      min_distance_(0.5),                 // Default minimum obstacle distance
-      last_cmd_()                         // Initialize last command to zeros
-{
-    // Initialize ROS2 communications
-    // Create publisher for robot velocity commands
-    publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+WalkerNode::WalkerNode()
+    : Node("walker_node"),
+      rotation_direction_(1.0) {  // Start with clockwise rotation
 
-    // Create subscriber for laser scan data
-    subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan",
-        10,
-        std::bind(&WalkerNode::laser_callback, this, std::placeholders::_1));
+  // Set up QoS profile for laser scan data
+  // Using BestEffort reliability for better handling of high-frequency sensor
+  // data
+  auto qos_profile = rclcpp::QoS(10)
+                         .reliability(rclcpp::ReliabilityPolicy::BestEffort)
+                         .history(rclcpp::HistoryPolicy::KeepLast);
 
-    // Initialize state machine with forward state
-    current_state_ = std::make_unique<ForwardState>(this);
-    
-    // Log initialization
-    RCLCPP_INFO(this->get_logger(), 
-        "Walker node initialized in %s state", 
-        current_state_->get_state_name().c_str());
+  // Initialize publisher and subscriber
+  publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+  subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+      "scan", qos_profile,
+      std::bind(&WalkerNode::laser_callback, this, std::placeholders::_1));
+
+  // Start in forward state
+  current_state_ = std::make_unique<ForwardState>(this);
+  RCLCPP_INFO(this->get_logger(), "Walker node initialized in Forward state");
 }
 
-WalkerNode::WalkerNode(
-    const rclcpp::NodeOptions& options,
-    double linear_vel,
-    double angular_vel,
-    double min_dist)
-    : Node("walker_node", options),
-      rotate_clockwise_(true),
-      linear_velocity_(linear_vel),
-      angular_velocity_(angular_vel),
-      min_distance_(min_dist),
-      last_cmd_()
-{
-    // Same initialization as default constructor
-    publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
-    subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan",
-        10,
-        std::bind(&WalkerNode::laser_callback, this, std::placeholders::_1));
-    current_state_ = std::make_unique<ForwardState>(this);
-    
-    RCLCPP_INFO(this->get_logger(), 
-        "Walker node initialized with custom parameters");
+void WalkerNode::publish_velocity(double linear, double angular) {
+  // Create and fill velocity message
+  auto msg = geometry_msgs::msg::Twist();
+  msg.linear.x = linear;    // Set forward/backward velocity
+  msg.angular.z = angular;  // Set rotational velocity
+  publisher_->publish(msg);
+}
+
+bool WalkerNode::is_path_clear(
+    const sensor_msgs::msg::LaserScan::SharedPtr scan) const {
+  // Check front 90-degree arc (±45 degrees)
+  // Implementation assumes 360 scan points (0-359)
+  const int left_start = 0;     // Front center
+  const int left_end = 17;      // 45 degrees to the left
+  const int right_start = 343;  // 45 degrees to the right
+  const int right_end = 359;    // Back to front center
+
+  // Check left side of front arc
+  for (int i = left_start; i <= left_end; ++i) {
+    if (scan->ranges[i] < SAFE_DISTANCE) {
+      RCLCPP_INFO(this->get_logger(),
+                  "Obstacle detected in left arc at %.2f meters",
+                  scan->ranges[i]);
+      return false;
+    }
+  }
+
+  // Check right side of front arc
+  for (int i = right_start; i <= right_end; ++i) {
+    if (scan->ranges[i] < SAFE_DISTANCE) {
+      RCLCPP_INFO(this->get_logger(),
+                  "Obstacle detected in right arc at %.2f meters",
+                  scan->ranges[i]);
+      return false;
+    }
+  }
+  return true;  // No obstacles detected
 }
 
 void WalkerNode::change_state(std::unique_ptr<WalkerState> new_state) {
-    // Log state transition
-    RCLCPP_INFO(this->get_logger(), 
-        "State changing from %s to %s", 
-        current_state_->get_state_name().c_str(),
-        new_state->get_state_name().c_str());
-    
-    // Update current state
-    current_state_ = std::move(new_state);
+  // Log state transition
+  RCLCPP_INFO(this->get_logger(), "Changing state from %s to %s",
+              current_state_->get_state_name().c_str(),
+              new_state->get_state_name().c_str());
+
+  current_state_ = std::move(new_state);
 }
 
-void WalkerNode::laser_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-    // Let the current state process the scan data
-    auto velocity = current_state_->process_scan(msg);
-    
-    // Store and publish the velocity command
-    last_cmd_ = velocity;
-    publisher_->publish(velocity);
+void WalkerNode::laser_callback(
+    const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+  // Delegate scan handling to current state
+  current_state_->handle(this, msg);
 }

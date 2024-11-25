@@ -1,99 +1,76 @@
+/**
+ * @file walker_state.cpp
+ * @author Abhishek Avhad
+ * @brief Implementation of the Walker State classes
+ * @version 1.0
+ * @date 2024-11-24
+ *
+ * @copyright Copyright (c) 2024
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include "walker/walker_state.hpp"
+
 #include "walker/walker_node.hpp"
 
-bool WalkerState::is_path_blocked(
-    const std::vector<float>& ranges, 
-    double min_distance) {
-    // Check each range value in the provided array
-    for (float range : ranges) {
-        // If range is less than minimum distance and not infinite
-        if (!std::isinf(range) && range < min_distance) {
-            return true;  // Path is blocked
-        }
-    }
-    return false;  // Path is clear
+void ForwardState::handle(WalkerNode* node,
+                          const sensor_msgs::msg::LaserScan::SharedPtr scan) {
+  // Check if path is clear and move accordingly
+  if (node->is_path_clear(scan)) {
+    // No obstacles detected, continue forward
+    node->publish_velocity(0.3, 0.0);
+  } else {
+    // Obstacle detected, prepare for rotation
+    node->toggle_rotation_direction();  // Alternate rotation direction
+    RCLCPP_INFO(
+        node->get_logger(),
+        "Obstacle detected, changing rotation direction and starting rotation");
+
+    // Transition to rotation state
+    node->change_state(std::make_unique<RotationState>(node));
+  }
 }
 
-geometry_msgs::msg::Twist ForwardState::process_scan(
-    const sensor_msgs::msg::LaserScan::SharedPtr scan) {
-    
-    geometry_msgs::msg::Twist velocity;
-    
-    // Extract the front arc of ranges (-30 to +30 degrees)
-    size_t start_idx = scan->ranges.size() / 6;  // -30 degrees
-    size_t end_idx = scan->ranges.size() / 3;    // +30 degrees
-    
-    // Create vector of relevant ranges
-    std::vector<float> front_ranges(
-        scan->ranges.begin() + start_idx,
-        scan->ranges.begin() + end_idx
-    );
-    
-    // Check if path is blocked
-    if (is_path_blocked(front_ranges, context_->get_min_distance())) {
-        // Change to rotating state with random direction
-        context_->change_state(
-            std::make_unique<RotatingState>(
-                context_, 
-                static_cast<bool>(rand() % 2)  // Random rotation direction
-            )
-        );
-        // Stop the robot before rotating
-        velocity.linear.x = 0.0;
-        velocity.angular.z = 0.0;
+void RotationState::handle(WalkerNode* node,
+                           const sensor_msgs::msg::LaserScan::SharedPtr scan) {
+  if (initial_rotation_) {
+    // In initial rotation period
+    // Rotate according to current direction
+    node->publish_velocity(0.0, 0.3 * node->get_rotation_direction());
+
+    // Set up timer for initial rotation if not already set
+    if (!rotation_timer_) {
+      // Create 10-second timer for initial rotation
+      rotation_timer_ =
+          node->create_wall_timer(std::chrono::seconds(10), [this]() {
+            initial_rotation_ = false;
+            rotation_timer_ = nullptr;
+          });
+
+      RCLCPP_INFO(node->get_logger(),
+                  "Starting initial 10-second rotation period");
+    }
+  } else {
+    // After initial rotation period
+    if (node->is_path_clear(scan)) {
+      // Found clear path, transition to forward movement
+      RCLCPP_INFO(node->get_logger(), "Path is clear, moving forward");
+      node->change_state(std::make_unique<ForwardState>(node));
     } else {
-        // Path is clear, create forward movement command
-        velocity = create_forward_command(context_->get_linear_velocity());
+      // Continue rotating until clear path is found
+      node->publish_velocity(0.0, 0.3 * node->get_rotation_direction());
+      RCLCPP_INFO(node->get_logger(), "Path blocked, continuing rotation");
     }
-    
-    return velocity;
-}
-
-geometry_msgs::msg::Twist ForwardState::create_forward_command(double linear_vel) {
-    geometry_msgs::msg::Twist cmd;
-    cmd.linear.x = linear_vel;  // Set forward velocity
-    cmd.angular.z = 0.0;        // No rotation
-    return cmd;
-}
-
-geometry_msgs::msg::Twist RotatingState::process_scan(
-    const sensor_msgs::msg::LaserScan::SharedPtr scan) {
-    
-    geometry_msgs::msg::Twist velocity;
-    
-    // Extract the front arc of ranges (-30 to +30 degrees)
-    size_t start_idx = scan->ranges.size() / 6;  // -30 degrees
-    size_t end_idx = scan->ranges.size() / 3;    // +30 degrees
-    
-    // Create vector of relevant ranges
-    std::vector<float> front_ranges(
-        scan->ranges.begin() + start_idx,
-        scan->ranges.begin() + end_idx
-    );
-    
-    // Check if path is now clear
-    if (!is_path_blocked(front_ranges, context_->get_min_distance())) {
-        // Change to forward state
-        context_->change_state(std::make_unique<ForwardState>(context_));
-        // Stop rotation before moving forward
-        velocity.linear.x = 0.0;
-        velocity.angular.z = 0.0;
-    } else {
-        // Path still blocked, continue rotating
-        velocity = create_rotation_command(
-            context_->get_angular_velocity(),
-            rotate_clockwise_
-        );
-    }
-    
-    return velocity;
-}
-
-geometry_msgs::msg::Twist RotatingState::create_rotation_command(
-    double angular_vel, bool clockwise) {
-    geometry_msgs::msg::Twist cmd;
-    cmd.linear.x = 0.0;  // No forward movement
-    // Set rotation direction
-    cmd.angular.z = clockwise ? -angular_vel : angular_vel;
-    return cmd;
+  }
 }
